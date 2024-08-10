@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Tower Defense Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            display: block;
+            background-color: #fff;
+            margin: 0 auto;
+            border: 1px solid #000;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Canvas size
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // Game variables
+        const tower = { x: canvas.width / 2, y: canvas.height / 2, width: 50, height: 50, health: 10 };
+        const bullets = [];
+        const enemies = [];
+        let baseEnemySpeed = 1;
+        let enemySpeed = baseEnemySpeed;
+        let bulletSpeed = 5; // Initial bullet speed
+        const bulletSpeedIncrement = 0.5; // Increment factor for bullet speed
+        let lastEnemySpawn = 0;
+        let lastBulletTime = 0;
+        let lastSpeedIncrease = 0;
+        let lastBulletSpeedIncrease = 0; // To track bullet speed increase
+        let score = 0;
+        const spawnInterval = 2000; // milliseconds
+        const speedIncreaseInterval = 10000; // milliseconds (for increasing speed)
+        const speedMultiplierIncrement = 0.5; // 50% faster
+        const bulletSpeedIncreaseInterval = 10000; // milliseconds (for increasing bullet speed)
+        let bulletsPerShot = 1; // Number of bullets per shot
+
+        let mouseX = canvas.width / 2;
+        let mouseY = canvas.height / 2;
+
+        function drawTower() {
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(tower.x - tower.width / 2, tower.y - tower.height / 2, tower.width, tower.height);
+
+            // Draw health bar background
+            ctx.fillStyle = 'lightgray';
+            ctx.fillRect(tower.x - tower.width / 2, tower.y + tower.height / 2 + 5, tower.width, 10);
+
+            // Draw health bar foreground
+            const healthBarWidth = (tower.health / 10) * tower.width;
+            ctx.fillStyle = 'red';
+            ctx.fillRect(tower.x - tower.width / 2, tower.y + tower.height / 2 + 5, healthBarWidth, 10);
+
+            // Display health text
+            ctx.fillStyle = 'white';
+            ctx.font = '20px Arial';
+            ctx.fillText(`Health: ${tower.health}`, tower.x - 20, tower.y + tower.height + 30);
+        }
+
+        function drawBullets() {
+            ctx.fillStyle = 'red';
+            bullets.forEach(bullet => {
+                ctx.beginPath();
+                ctx.arc(bullet.x, bullet.y, 10, 0, Math.PI * 2); // Increased bullet size
+                ctx.fill();
+            });
+        }
+
+        function drawEnemies() {
+            ctx.fillStyle = 'green';
+            enemies.forEach(enemy => {
+                ctx.beginPath();
+                ctx.arc(enemy.x, enemy.y, 15, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function drawScore() {
+            ctx.fillStyle = 'black';
+            ctx.font = '20px Arial';
+            ctx.fillText(`Score: ${score}`, 10, 30);
+        }
+
+        function updateEnemies(timestamp) {
+            enemies.forEach((enemy, index) => {
+                // Calculate direction to tower
+                const dx = tower.x - enemy.x;
+                const dy = tower.y - enemy.y;
+                const magnitude = Math.hypot(dx, dy);
+
+                if (magnitude > 0) {
+                    // Normalize direction vector
+                    const directionX = dx / magnitude;
+                    const directionY = dy / magnitude;
+
+                    // Move enemy towards the tower
+                    enemy.x += directionX * enemySpeed;
+                    enemy.y += directionY * enemySpeed;
+                }
+
+                if (enemy.y > canvas.height || enemy.x < 0 || enemy.x > canvas.width || enemy.y < 0) {
+                    enemies.splice(index, 1);
+                }
+
+                if (Math.hypot(enemy.x - tower.x, enemy.y - tower.y) < 30) { // Consider collision when close
+                    enemies.splice(index, 1);
+                    tower.health -= 1;
+                    if (tower.health <= 0) {
+                        alert('Game Over!');
+                        window.location.reload(); // Reload the page to restart the game
+                    }
+                }
+            });
+
+            // Increase speed every 10 seconds by 0.5 times
+            if (timestamp - lastSpeedIncrease > speedIncreaseInterval) {
+                enemySpeed *= (1 + speedMultiplierIncrement);
+                lastSpeedIncrease = timestamp;
+            }
+        }
+
+        function updateBullets(timestamp) {
+            bullets.forEach((bullet, index) => {
+                // Move bullet in its direction
+                bullet.x += bullet.dx * bulletSpeed;
+                bullet.y += bullet.dy * bulletSpeed;
+
+                enemies.forEach((enemy, enemyIndex) => {
+                    if (Math.hypot(bullet.x - enemy.x, bullet.y - enemy.y) < 20) {
+                        enemies.splice(enemyIndex, 1);
+                        bullets.splice(index, 1);
+                        score += 1; // Increase score when an enemy is hit
+                        // Increase the number of bullets per shot every 10 points
+                        if (score % 10 === 0) {
+                            bulletsPerShot += 1;
+                        }
+                    }
+                });
+
+                if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
+                    bullets.splice(index, 1);
+                }
+            });
+
+            // Increase bullet speed every 10 seconds by 0.5 times
+            if (timestamp - lastBulletSpeedIncrease > bulletSpeedIncreaseInterval) {
+                bulletSpeed *= (1 + bulletSpeedIncrement);
+                lastBulletSpeedIncrease = timestamp;
+            }
+        }
+
+        function spawnEnemy() {
+            // Randomly select a position on the edge of the canvas
+            const edge = Math.random();
+            let x, y;
+
+            if (edge < 0.25) { // Top edge
+                x = Math.random() * canvas.width;
+                y = 0;
+            } else if (edge < 0.5) { // Right edge
+                x = canvas.width;
+                y = Math.random() * canvas.height;
+            } else if (edge < 0.75) { // Bottom edge
+                x = Math.random() * canvas.width;
+                y = canvas.height;
+            } else { // Left edge
+                x = 0;
+                y = Math.random() * canvas.height;
+            }
+
+            enemies.push({ x, y });
+        }
+
+        function shootBullets() {
+            for (let i = 0; i < bulletsPerShot; i++) {
+                const dx = mouseX - tower.x;
+                const dy = mouseY - tower.y;
+                const magnitude = Math.hypot(dx, dy);
+
+                // Normalize direction vector
+                const directionX = dx / magnitude;
+                const directionY = dy / magnitude;
+
+                const bullet = {
+                    x: tower.x,
+                    y: tower.y,
+                    dx: directionX,
+                    dy: directionY
+                };
+
+                bullets.push(bullet);
+            }
+        }
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Spawn enemies
+            if (timestamp - lastEnemySpawn > spawnInterval) {
+                spawnEnemy();
+                lastEnemySpawn = timestamp;
+            }
+
+            // Shoot bullets every 0.5 seconds
+            if (timestamp - lastBulletTime > 500) {
+                shootBullets();
+                lastBulletTime = timestamp;
+            }
+
+            updateEnemies(timestamp);
+            updateBullets(timestamp);
+            drawEnemies();
+            drawBullets();
+            drawTower();
+            drawScore();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        canvas.addEventListener('mousemove', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = event.clientX - rect.left;
+            mouseY = event.clientY - rect.top;
+        });
+
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
+
+</body>
+</html>
